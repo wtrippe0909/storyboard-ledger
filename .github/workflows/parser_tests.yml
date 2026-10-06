@@ -1,0 +1,36 @@
+# Parser regression tests (stdlib unittest, no dependencies).
+# Separate from storyboard_manifest.yml, which only runs on .md changes.
+
+name: Parser Tests
+
+on:
+  push:
+    paths:
+      - 'storyboard_to_prompts.py'
+      - 'automation/**'
+      - 'tests/**'
+      - '.github/workflows/parser_tests.yml'
+  pull_request:
+    paths:
+      - 'storyboard_to_prompts.py'
+      - 'automation/**'
+      - 'tests/**'
+      - '.github/workflows/parser_tests.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  unittest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run tests
+        run: python3 -m unittest discover -s tests -v

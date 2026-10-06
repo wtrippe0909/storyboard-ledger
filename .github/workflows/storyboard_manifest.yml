@@ -1,7 +1,7 @@
 # Storyboard manifest automation — Option 1 CI mode (GFED authorized 2026-10-06).
 #
-# INSTALL: copy this file to .github/workflows/storyboard_manifest.yml
-# in the target repo, and set the env vars below to match the repo layout.
+# Installed in wtrippe0909/storyboard-ledger. Set the env vars below to match
+# the repo layout.
 #
 # Behavior:
 #   - On push/PR touching **/*.md: validates every storyboard table with
@@ -24,6 +24,11 @@ env:
   STORYBOARD_SCRIPT: storyboard_to_prompts.py
   # Glob for scene/storyboard source files:
   SCENE_GLOB: 'scenes/**/*.md storyboards/**/*.md'
+
+# The commit-back step pushes regenerated manifests, which needs write access;
+# the default GITHUB_TOKEN is read-only on newer repos.
+permissions:
+  contents: write
 
 jobs:
   validate-and-generate:
