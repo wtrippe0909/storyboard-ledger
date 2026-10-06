@@ -2,7 +2,8 @@
 
 Dedicated tooling repo: Markdown storyboard shot-list → image-generation prompt pipeline.
 
-**Engine status:** `storyboard_to_prompts.py` v1.2 — **LOCKED** per GFED ruling 2026-10-06.
+**Engine status:** `storyboard_to_prompts.py` v1.3 — **LOCKED** per GFED ruling 2026-10-06
+(v1.3 bug-fix cycle: see `docs/pipeline-verification-signoff.md`).
 Scope: core parsing logic, 9:16 default aspect ratio, orthogonal camera/speed tag expansion,
 fallback token preservation, segment-based Markdown table normalization.
 Invariant: any future modification to base token mappings or row-ingestion behavior
@@ -15,6 +16,7 @@ requires an explicit version bump and sign-off cycle.
 | `storyboard_to_prompts.py` | The locked parser. Markdown storyboard tables → positive/negative prompts + JSON/CSV/TXT manifests. |
 | `automation/watch_storyboards.py` | Local watcher (zero dependencies, mtime polling). Auto-generates manifests on `.md` change; fail-closed error logs never overwrite existing manifests. |
 | `.github/workflows/storyboard_manifest.yml` | CI: validates every scene file with `--strict` on push/PR; fails the build on malformed tables; commits manifests back. |
+| `tests/` | Parser regression tests: `python3 -m unittest discover -s tests` (run in CI by `parser_tests.yml`). |
 | `docs/` | Reference: ledger definition, script-to-storyboard decomposition, shot-list template, verification sign-off. |
 
 ## Quick start

@@ -1,12 +1,21 @@
 #!/usr/bin/env python3
 """
-Storyboard Markdown Table to Image Generation Prompt Parser (v1.2)
+Storyboard Markdown Table to Image Generation Prompt Parser (v1.3)
 - Default aspect ratio: 9:16 (overridable via --ar)
 - Comprehensive camera movement & speed expansion (PAN, TILT, ZOOM, WHIP, CRANE, BOOM, PUSH/PULL)
 - Robust parser supporting both single-line <br> and multi-line markdown table rows
 - v1.2 (2026-10-06, under GFED LOCKED ruling 2026-10-06 authorizing Option 1 automation):
   additive only — source line tracking per panel, header/column validation,
   --strict fail-closed mode. Token mappings and row-ingestion behavior unchanged.
+- v1.3 (proposed 2026-10-06, pending GFED sign-off): bug fixes found after the
+  storyboard-ledger handoff. Token mappings themselves unchanged.
+  * Camera dedup is span-based: a shorter tag is suppressed only where it sits
+    inside a longer matched tag (DOLLY inside DOLLY IN), so CU is no longer
+    dropped when MCU is present (likewise WS/VWS).
+  * Header and divider rows of later tables in the same file are skipped
+    instead of parsed as panels; --strict checks every table's header.
+  * source_lines ends at a row's last non-empty line, not at the next row
+    or the end of the file.
 Source: collaborator (Meta AI) patch, relayed via GFED, 2026-10-06.
 Muse verification note (2026-10-06): normalize_markdown_table v1.1 failed on the
 relayed multi-line format (row-start detection required >=5 pipes; relayed rows
@@ -93,17 +102,22 @@ def expand_camera_tags(framing_raw: str, movement_raw: str) -> str:
     """Map shorthand codes and movement descriptions to descriptive generative tokens."""
     expanded_tokens = []
     combined_raw = f"{framing_raw} {movement_raw}".upper()
-    matched_keys = set()
+    matched_spans: List[tuple] = []
 
     # Prioritize multi-word phrases first (e.g., 'PUSH IN' before 'IN', 'DOLLY IN' before 'DOLLY')
     sorted_keys = sorted(CAMERA_EXPANSIONS.keys(), key=lambda k: len(k.split()), reverse=True)
 
     for tag in sorted_keys:
         pattern = rf"\b{re.escape(tag)}\b"
-        if re.search(pattern, combined_raw):
-            if not any(tag in m for m in matched_keys):
-                expanded_tokens.append(CAMERA_EXPANSIONS[tag])
-                matched_keys.add(tag)
+        spans = [m.span() for m in re.finditer(pattern, combined_raw)]
+        # Count the tag only if it occurs somewhere outside a longer tag already
+        # matched (v1.3: was a substring test on tag names, which dropped CU when MCU matched).
+        if any(
+            not any(s0 <= start and end <= s1 for s0, s1 in matched_spans)
+            for start, end in spans
+        ):
+            expanded_tokens.append(CAMERA_EXPANSIONS[tag])
+            matched_spans.extend(spans)
 
     # Capture modifiers like FAST, SLOW, RAPID
     if re.search(r"\bFAST\b|\bRAPID\b", combined_raw):
@@ -157,6 +171,7 @@ def normalize_markdown_table(md_content: str) -> List["TableRow"]:
     segments: List[TableRow] = []
     current: Optional[str] = None
     current_start: int = 0
+    current_end: int = 0
 
     for lineno, raw in enumerate(md_content.splitlines(), start=1):
         line = raw.strip()
@@ -164,19 +179,47 @@ def normalize_markdown_table(md_content: str) -> List["TableRow"]:
             continue
         if line.startswith("|"):
             if current is not None:
-                segments.append(TableRow(current, current_start, lineno - 1))
+                segments.append(TableRow(current, current_start, current_end))
             current = line
-            current_start = lineno
+            current_start = current_end = lineno
         elif current is not None:
             # Wrapped cell continuation: fold into the current row.
             current += " <br> " + line
+            current_end = lineno
 
     if current is not None:
-        # end line = last non-empty line number
-        last = sum(1 for _ in md_content.splitlines())
-        segments.append(TableRow(current, current_start, last))
+        segments.append(TableRow(current, current_start, current_end))
 
     return segments
+
+
+def is_divider_row(row: TableRow) -> bool:
+    """True for a Markdown table divider row such as |---|:---:|---|."""
+    cells = [c.strip() for c in row.text.split("|")[1:-1]]
+    return bool(cells) and all(re.fullmatch(r":?-{3,}:?", c) for c in cells)
+
+
+def split_table_rows(rows: List[TableRow]) -> tuple:
+    """
+    Split normalized rows into (header_rows, data_rows).
+
+    rows[0] is the first table's header and rows[1] its divider, as in v1.2.
+    v1.3: after that, divider rows and the header row directly above each
+    divider (a later table in the same file) are no longer treated as data.
+    """
+    if len(rows) < 3:
+        return [], []
+    headers = [rows[0]]
+    data = []
+    rest = rows[2:]
+    for i, row in enumerate(rest):
+        if is_divider_row(row):
+            continue
+        if i + 1 < len(rest) and is_divider_row(rest[i + 1]):
+            headers.append(row)
+            continue
+        data.append(row)
+    return headers, data
 
 
 def parse_storyboard_markdown(
@@ -184,12 +227,9 @@ def parse_storyboard_markdown(
 ) -> List[Dict[str, Any]]:
     """Parse table rows into prompt objects applying the configured aspect ratio."""
     panels = []
-    rows = normalize_markdown_table(md_content)
+    _, data_rows = split_table_rows(normalize_markdown_table(md_content))
 
-    if len(rows) < 3:
-        return panels
-
-    for row in rows[2:]:
+    for row in data_rows:
         cells = [c.strip() for c in row.text.split("|")[1:-1]]
         if len(cells) < 4:
             continue
@@ -275,16 +315,17 @@ def validate_markdown(md_content: str) -> List[str]:
         errors.append("No parseable storyboard table found (need header + divider + at least one data row).")
         return errors
 
-    header_cells = [clean_markdown_cell(h).lower() for h in rows[0].text.split("|")[1:-1]]
-    header_joined = " | ".join(header_cells)
-    for required in REQUIRED_COLUMNS:
-        if not any(required in cell for cell in header_cells):
-            errors.append(
-                f"Header row (line {rows[0].start_line}) is missing a required column "
-                f"matching '{required}'. Found columns: {header_joined or '(none)'}"
-            )
+    header_rows, data_rows = split_table_rows(rows)
+    for header in header_rows:
+        header_cells = [clean_markdown_cell(h).lower() for h in header.text.split("|")[1:-1]]
+        header_joined = " | ".join(header_cells)
+        for required in REQUIRED_COLUMNS:
+            if not any(required in cell for cell in header_cells):
+                errors.append(
+                    f"Header row (line {header.start_line}) is missing a required column "
+                    f"matching '{required}'. Found columns: {header_joined or '(none)'}"
+                )
 
-    data_rows = rows[2:]
     parseable = 0
     for row in data_rows:
         cells = [c.strip() for c in row.text.split("|")[1:-1]]
