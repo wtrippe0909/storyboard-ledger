@@ -7,7 +7,7 @@ Storyboard Markdown Table to Image Generation Prompt Parser (v1.3)
 - v1.2 (2026-10-06, under GFED LOCKED ruling 2026-10-06 authorizing Option 1 automation):
   additive only — source line tracking per panel, header/column validation,
   --strict fail-closed mode. Token mappings and row-ingestion behavior unchanged.
-- v1.3 (proposed 2026-10-06, pending GFED sign-off): bug fixes found after the
+- v1.3 (approved by GFED 2026-10-06, LOCKED): bug fixes found after the
   storyboard-ledger handoff. Token mappings themselves unchanged.
   * Camera dedup is span-based: a shorter tag is suppressed only where it sits
     inside a longer matched tag (DOLLY inside DOLLY IN), so CU is no longer

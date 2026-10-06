@@ -24,7 +24,7 @@ The relayed v1.1 `normalize_markdown_table` (pipe-count ≥ 5 row detection) sil
 
 v1.2 (2026-10-06) was cut under the same ruling's Option 1 authorization: additive only — per-panel `source_lines`, header/column validation, `--strict` fail-closed mode. Token mappings and ingestion behavior unchanged.
 
-## v1.3 bug-fix cycle (proposed 2026-10-06 — sign-off pending)
+## v1.3 bug-fix cycle (approved 2026-10-06)
 
 Found while installing the payload in `wtrippe0909/storyboard-ledger` (handoff HA-20261006-SL-001); each reproduced before fixing and covered by `tests/test_storyboard_to_prompts.py`. Base token mappings are unchanged; what changes is which mappings fire and which rows are ingested, so per the invariant this needs a version bump and sign-off.
 
@@ -34,7 +34,7 @@ Found while installing the payload in `wtrippe0909/storyboard-ledger` (handoff H
 | A second table in the same file had its header row parsed as a panel ("Panel ID"), and `--strict` passed it. `docs/storyboard-shot-list-template.md` itself triggers this | Header and divider rows of later tables are skipped; `--strict` checks every table's header for the required columns |
 | `source_lines` ran to the line before the next row, and for the last row to the end of the file, counting blank lines | Ends at the row's last non-empty line |
 
-**Sign-off:** _pending — GFED_
+**Sign-off:** APPROVED — GFED, 2026-10-06 (PR #2). v1.3 is the LOCKED version from this date; the invariant above applies to it unchanged.
 
 ## Option 1 build record (authorized 2026-10-06, built and verified same day)
 
