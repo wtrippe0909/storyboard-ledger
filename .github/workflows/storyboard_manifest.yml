@@ -1,0 +1,89 @@
+# Storyboard manifest automation — Option 1 CI mode (GFED authorized 2026-10-06).
+#
+# INSTALL: copy this file to .github/workflows/storyboard_manifest.yml
+# in the target repo, and set the env vars below to match the repo layout.
+#
+# Behavior:
+#   - On push/PR touching **/*.md: validates every storyboard table with
+#     storyboard_to_prompts.py --strict (fails the build on malformed tables).
+#   - On success: generates .json/.csv/.txt manifests and commits them back
+#     (push events only; PRs get manifests as a build artifact instead).
+
+name: Storyboard Manifests
+
+on:
+  push:
+    paths:
+      - '**/*.md'
+  pull_request:
+    paths:
+      - '**/*.md'
+
+env:
+  # Path to the parser inside the repo:
+  STORYBOARD_SCRIPT: storyboard_to_prompts.py
+  # Glob for scene/storyboard source files:
+  SCENE_GLOB: 'scenes/**/*.md storyboards/**/*.md'
+
+jobs:
+  validate-and-generate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Validate storyboard tables (fail-closed)
+        run: |
+          set -euo pipefail
+          shopt -s globstar nullglob
+          FAILED=0
+          for f in $SCENE_GLOB; do
+            echo "Validating $f ..."
+            if ! python3 "$STORYBOARD_SCRIPT" "$f" --strict; then
+              echo "::error file=$f::Storyboard validation failed"
+              FAILED=1
+            fi
+          done
+          if [ "$FAILED" -ne 0 ]; then
+            echo "::error::One or more storyboard tables failed validation."
+            exit 1
+          fi
+          echo "All storyboard tables valid."
+
+      - name: Generate manifests
+        if: success()
+        run: |
+          set -euo pipefail
+          shopt -s globstar nullglob
+          for f in $SCENE_GLOB; do
+            echo "Generating manifests for $f ..."
+            python3 "$STORYBOARD_SCRIPT" "$f"
+          done
+
+      - name: Commit manifests back (push events only)
+        if: success() && github.event_name == 'push'
+        run: |
+          git config user.name "storyboard-bot"
+          git config user.email "storyboard-bot@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No manifest changes to commit."
+          else
+            git commit -m "chore: regenerate storyboard manifests [skip ci]"
+            git push
+          fi
+
+      - name: Upload manifests as artifact (PR events)
+        if: success() && github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: storyboard-manifests
+          path: |
+            **/*.json
+            **/*.csv
+            **/*.txt
